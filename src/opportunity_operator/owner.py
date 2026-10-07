@@ -56,6 +56,16 @@ class OwnerSession:
             self._repo.transition(opportunity_id, DECISION_TARGET[decision], f"owner decision: {decision}", decision_id=did)
         return did
 
+    # ---- budget overrides ---------------------------------------------------
+    def approve_budget(self, scope: Literal["run", "month"], period: str, extra_usd: float, reason: str) -> str:
+        """Raise a hard cap for ONE run (period = run id) or ONE UTC month (period = 'YYYY-MM'). Append-only."""
+        if extra_usd <= 0:
+            raise ValueError("extra_usd must be positive")
+        self._require(f"APPROVE BUDGET {scope} {period} +${extra_usd:.2f}")
+        bid = new_id()
+        self._conn.execute("INSERT INTO budget_approval VALUES (?,?,?,?,?,?)", (bid, now_iso(), scope, period, extra_usd, reason))
+        return bid
+
     # ---- prerequisites ------------------------------------------------------
     def set_prerequisite(self, key: str, status: str, notes: str | None = None) -> None:
         if status == "done":

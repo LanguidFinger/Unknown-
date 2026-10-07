@@ -31,5 +31,8 @@ class LLMClient(Protocol):
 
 
 def estimate_tokens(text: str) -> int:
-    """Cheap pre-flight estimate (~4 chars/token). Real usage is charged after the call."""
-    return max(1, len(text) // 4)
+    """Deliberately conservative pre-flight estimate (~3 chars/token) so caps are not undershot.
+
+    Real usage is charged after the call; the estimate only decides whether a call may start.
+    """
+    return max(1, len(text) // 3 + 1)

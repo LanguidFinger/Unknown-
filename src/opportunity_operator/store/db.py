@@ -28,7 +28,8 @@ from typing import Literal
 Role = Literal["agent", "system", "owner", "context", "migrator"]
 
 OWNER_ONLY_TABLES = frozenset(
-    {"owner_profile", "business_profile", "project", "project_fact", "restricted_stub", "decision", "state_transition"}
+    {"owner_profile", "business_profile", "project", "project_fact", "restricted_stub", "decision", "state_transition",
+     "budget_approval"}
 )
 PROFILE_TABLES = frozenset({"owner_profile", "business_profile", "project", "project_fact", "restricted_stub"})
 

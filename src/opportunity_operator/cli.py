@@ -17,6 +17,7 @@ from .seeds.loader import load_placeholder_project
 from .store.db import connect
 from .store.migrator import verify_guards
 from .store.repo import Repository
+from .usage import usage_by_stage
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Opportunity Operator (Phase 0)")
 DataDirOpt = Annotated[str | None, typer.Option("--data-dir", help="Local data directory (outside any repo).")]
@@ -152,6 +153,34 @@ def verify_fact(table: str, key: str, project_id: str | None = None, data_dir: D
         owner.close()
 
 
+@app.command("budget-approve")
+def budget_approve(scope: str, period: str, extra_usd: float, reason: str, data_dir: DataDirOpt = None) -> None:
+    """Owner: raise a hard cap for ONE run (period = run id) or ONE UTC month (YYYY-MM). Interactive confirmation."""
+    if scope not in {"run", "month"}:
+        raise typer.BadParameter("scope must be 'run' or 'month'")
+    s = load_settings(data_dir)
+    dd = init_data_dir(s)
+    owner = OwnerSession(dd, s, _confirm)
+    try:
+        owner.approve_budget(scope, period, extra_usd, reason)  # type: ignore[arg-type]
+    finally:
+        owner.close()
+    typer.echo("recorded")
+
+
+@app.command("usage")
+def usage(month: str | None = None, data_dir: DataDirOpt = None) -> None:
+    """Model calls, tokens and cost by pipeline stage for a UTC month (default: this month)."""
+    s = load_settings(data_dir)
+    dd = init_data_dir(s)
+    rows = usage_by_stage(connect(dd.db_path(), "agent"), month)
+    total = sum(r.cost_usd for r in rows)
+    for r in rows:
+        typer.echo(f"{r.stage:16} {r.model_id:20} calls={r.calls:<5} in={r.tokens_in:<9} out={r.tokens_out:<8} "
+                   f"${r.cost_usd:8.4f} (${r.avg_cost_per_call:.4f}/call)")
+    typer.echo(f"TOTAL ${total:.4f} of ${s.monthly_cap_usd:.2f} monthly cap ({total / s.monthly_cap_usd:.0%})" if s.monthly_cap_usd else f"TOTAL ${total:.4f}")
+
+
 @app.command("audit-evidence")
 def audit_evidence(data_dir: DataDirOpt = None) -> None:
     """Re-verify every stored quote against its snapshot and the snapshot hashes."""
@@ -178,5 +207,5 @@ def audit_sweep(needle: Annotated[list[str], typer.Option("--needle")], data_dir
 
 ALLOWED_COMMANDS = frozenset({
     "init", "doctor", "explain", "decide", "prereq-list", "prereq-set", "restricted-add",
-    "seed-placeholder-project", "profile-set", "verify-fact", "audit-evidence", "audit-sweep",
+    "seed-placeholder-project", "profile-set", "verify-fact", "budget-approve", "usage", "audit-evidence", "audit-sweep",
 })

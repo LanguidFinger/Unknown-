@@ -40,6 +40,18 @@ _REDIRECTS = {301, 302, 303, 307, 308}
 
 Resolver = Callable[[str], list[str]]
 
+_DIAG_EXACT = {"retry-after", "www-authenticate", "server", "via", "date", "age"}
+
+
+def diagnostic_headers(headers: httpx.Headers) -> tuple[tuple[str, str], ...]:
+    """The few response headers worth recording for feasibility work (never cookies or auth tokens)."""
+    out = []
+    for name, value in headers.items():
+        low = name.lower()
+        if low in _DIAG_EXACT or low.startswith(("x-ratelimit", "ratelimit", "x-rate-limit")):
+            out.append((low, value[:200]))
+    return tuple(out)
+
 
 def _system_resolver(host: str) -> list[str]:
     return sorted({ai[4][0] for ai in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)})
@@ -139,19 +151,21 @@ class HttpFetcher:
 
     def get(self, url: str) -> FetchResult:
         current = url
+        chain: list[str] = []
         for _hop in range(self._max_redirects + 1):
             host = self.validate_url(current)
             self._throttle(host)
             with self._client() as client, client.stream("GET", current, headers={"Accept": "text/html,application/json,application/pdf,text/plain"}) as resp:
                 if resp.status_code in _REDIRECTS and "location" in resp.headers:
+                    chain.append(current)
                     current = urljoin(current, resp.headers["location"])
                     continue
                 ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
                 if resp.status_code < 400 and ctype not in _ALLOWED_TYPES:
                     raise FetchRefused(f"content type {ctype!r} not allowed")
                 body = self._read(resp)
-                return FetchResult(url, current, resp.status_code, ctype, body,
-                                   datetime.now(UTC).isoformat(), hashlib.sha256(body).hexdigest())
+                return FetchResult(url, current, resp.status_code, ctype, body, datetime.now(UTC).isoformat(),
+                                   hashlib.sha256(body).hexdigest(), tuple(chain), diagnostic_headers(resp.headers))
         raise FetchRefused("too many redirects")
 
     def post_json(self, url: str, body: Mapping[str, Any]) -> FetchResult:
@@ -168,5 +182,5 @@ class HttpFetcher:
             data = resp.content
             if len(data) > self._s.max_fetch_bytes:
                 raise FetchRefused("response exceeds size cap")
-            return FetchResult(url, url, resp.status_code, ctype, data,
-                               datetime.now(UTC).isoformat(), hashlib.sha256(data).hexdigest())
+            return FetchResult(url, url, resp.status_code, ctype, data, datetime.now(UTC).isoformat(),
+                               hashlib.sha256(data).hexdigest(), (), diagnostic_headers(resp.headers))

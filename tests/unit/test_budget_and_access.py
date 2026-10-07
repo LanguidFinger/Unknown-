@@ -3,11 +3,11 @@ import pytest
 from opportunity_operator.config import Settings
 from opportunity_operator.errors import BudgetExceeded
 from opportunity_operator.policy.access import AccessLevel, Destination, Purpose, permitted_levels
-from opportunity_operator.policy.budget_guard import BudgetGuard
+from opportunity_operator.policy.budget_guard import BudgetGuard, month_bounds, month_key
 
 
 def _b(**kw):
-    base = dict(max_llm_calls=2, max_tokens_in=1000, max_tokens_out=500, max_cost_usd=1.0, max_fetches=1, max_searches=1)
+    base = dict(max_llm_calls=2, max_tokens_in=1000, max_tokens_out=500, max_cost_usd=1.0, monthly_cap_usd=50.0, max_fetches=1, max_searches=1)
     base.update(kw)
     return BudgetGuard(**base)
 
@@ -15,21 +15,29 @@ def _b(**kw):
 def test_llm_call_cap():
     b = _b()
     for _ in range(2):
-        b.precheck_llm(10, 10)
-        b.charge_llm(10, 10)
+        b.precheck_llm(10, 10, 1.0, 5.0)
+        b.charge_llm(10, 10, 1.0, 5.0)
     with pytest.raises(BudgetExceeded):
-        b.precheck_llm(10, 10)
+        b.precheck_llm(10, 10, 1.0, 5.0)
 
 
 def test_token_cap_precheck():
     with pytest.raises(BudgetExceeded):
-        _b().precheck_llm(2000, 10)
+        _b().precheck_llm(2000, 10, 1.0, 5.0)
 
 
-def test_cost_cap_precheck():
-    b = _b(max_cost_usd=0.001, price_in_per_mtok=10.0, price_out_per_mtok=50.0)
+def test_per_run_cost_cap_is_a_hard_pre_flight_ceiling_and_asks_for_owner_approval():
+    b = _b(max_cost_usd=0.001, max_tokens_in=10**9, max_tokens_out=10**9)
+    with pytest.raises(BudgetExceeded, match="owner approval required"):
+        b.precheck_llm(100_000, 100, 10.0, 50.0)
+
+
+def test_cost_accumulates_against_the_run_cap():
+    b = _b(max_cost_usd=0.01, max_tokens_in=10**9, max_tokens_out=10**9, max_llm_calls=100)
+    b.precheck_llm(1000, 100, 2.0, 10.0)
+    b.charge_llm(4000, 400, 2.0, 10.0)  # 0.012 actual, over the estimate
     with pytest.raises(BudgetExceeded):
-        b.precheck_llm(100_000, 100)
+        b.precheck_llm(10, 10, 2.0, 10.0)
 
 
 def test_fetch_and_search_caps():
@@ -41,9 +49,13 @@ def test_fetch_and_search_caps():
         b.charge_search()
 
 
+def test_month_helpers_handle_year_end():
+    assert month_bounds("2026-12")[1].startswith("2027-01-01")
+    assert month_bounds("2026-02")[0].startswith("2026-02-01") and len(month_key()) == 7
+
+
 L = AccessLevel
 CASES = [
-    # purpose, destination, confidential_opt_in, expected levels
     (Purpose.EXTRACTION, Destination.CLOUD_LLM, False, set()),
     (Purpose.EXTRACTION, Destination.LOCAL_LLM, True, set()),
     (Purpose.SKEPTIC, Destination.CLOUD_LLM, True, set()),

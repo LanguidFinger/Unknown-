@@ -8,10 +8,13 @@ profile-reading connection.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from .config import Settings
-from .policy.budget_guard import BudgetGuard
+from .ids import new_id
+from .policy.budget_guard import BudgetGuard, SpendLedger
 from .policy.context_builder import ContextBuilder
 from .policy.disclosure_filter import DisclosureFilter
 from .policy.guarded import DbRecorder, GuardedFetcher, GuardedLLM, GuardedSearch
@@ -46,27 +49,42 @@ class App:
     builder: ContextBuilder
     budget: BudgetGuard
     disclosure_filter: DisclosureFilter
+    run_id: str
     _conns: list[sqlite3.Connection]
+    _finished: bool = field(default=False, init=False)
+
+    def finish(self, status: str = "finished") -> None:
+        if self._finished:
+            return
+        self._finished = True
+        b = self.budget
+        self.repo.conn.execute(
+            "UPDATE run_log SET finished_at = ?, tokens_in = ?, tokens_out = ?, cost_usd = ?, fetches = ?, status = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(), b.tokens_in, b.tokens_out, b.cost_usd, b.fetches, status, self.run_id),
+        )
 
     def close(self) -> None:
+        self.finish()
         for c in self._conns:
             c.close()
 
 
 def build_app(
-    settings: Settings, *, llm: LLMClient, search: SearchProvider, fetcher: Fetcher,
-    price_in_per_mtok: float = 0.0, price_out_per_mtok: float = 0.0,
+    settings: Settings, *, llms: Mapping[str, LLMClient], fetcher: Fetcher, search: SearchProvider | None = None,
 ) -> App:
+    """`llms` maps pipeline stage -> client. There is no default and no fallback model."""
     dd = init_data_dir(settings)
     agent = connect(dd.db_path(), "agent")
-    audit = connect(dd.db_path(), "system")        # separate autocommit connection: incidents survive rollbacks
+    audit = connect(dd.db_path(), "system")        # separate autocommit connection: incidents/cost rows survive rollbacks
     context = connect(dd.db_path(), "context")
+    run_id = new_id()
+    agent.execute("INSERT INTO run_log (id, started_at, status) VALUES (?,?,'running')", (run_id, datetime.now(UTC).isoformat()))
     flt = DisclosureFilter.from_connection(context)
-    budget = BudgetGuard.from_settings(settings, price_in=price_in_per_mtok, price_out=price_out_per_mtok)
-    rec = DbRecorder(audit)
+    budget = BudgetGuard.from_settings(settings, SpendLedger(audit, run_id))
+    rec = DbRecorder(audit, run_id)
     return App(
         settings=settings, datadir=dd, repo=Repository(agent, dd, settings, "agent"),
-        llm=GuardedLLM(llm, flt, budget, rec), search=GuardedSearch(search, flt, budget, rec),
+        llm=GuardedLLM(llms, settings, flt, budget, rec), search=GuardedSearch(search, settings, flt, budget, rec),
         fetcher=GuardedFetcher(fetcher, flt, budget, rec), builder=ContextBuilder(context, settings, flt),
-        budget=budget, disclosure_filter=flt, _conns=[agent, audit, context],
+        budget=budget, disclosure_filter=flt, run_id=run_id, _conns=[agent, audit, context],
     )

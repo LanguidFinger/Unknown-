@@ -36,7 +36,7 @@ def _neutralise(text: str) -> str:
 
 
 class Prompt:
-    __slots__ = ("purpose", "destination", "task", "facts", "untrusted", "schema_name", "prompt_version")
+    __slots__ = ("purpose", "destination", "task", "facts", "untrusted", "schema_name", "prompt_version", "stage")
 
     def __init__(
         self,
@@ -49,6 +49,7 @@ class Prompt:
         untrusted: Sequence[str],
         schema_name: str,
         prompt_version: str,
+        stage: str,
     ) -> None:
         if _token is not _MINT:
             raise TypeError("Prompt can only be created by ContextBuilder")
@@ -62,6 +63,7 @@ class Prompt:
         self.untrusted = tuple(untrusted)
         self.schema_name = schema_name
         self.prompt_version = prompt_version
+        self.stage = stage
 
     def trusted_text(self) -> str:
         lines = [PREAMBLE, f"TASK ({self.schema_name}): {self.task}"]

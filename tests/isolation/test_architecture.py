@@ -189,7 +189,7 @@ def test_settings_have_no_field_that_can_point_at_project_material():
     assert set(Settings.model_fields) == {
         "data_dir", "egress_mode", "api_allow_hosts", "extra_allow_hosts", "max_fetch_bytes", "min_host_interval_s",
         "min_quote_chars", "max_llm_calls", "max_tokens_in", "max_tokens_out", "max_cost_usd", "max_fetches",
-        "max_searches", "confidential_to_cloud_llm",
+        "max_searches", "confidential_to_cloud_llm", "monthly_cap_usd", "stage_models", "model_prices", "search_enabled",
     }
     assert Settings.model_config["extra"] == "forbid"
     try:

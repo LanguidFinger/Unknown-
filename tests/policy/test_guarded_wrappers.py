@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from opportunity_operator.adapters.fake_fetcher import FakeFetcher
-from opportunity_operator.adapters.mock_llm import MockLLM
+from opportunity_operator.adapters.mock_llm import mock_clients
 from opportunity_operator.adapters.mock_search import MockSearch
 from opportunity_operator.app import build_app
 from opportunity_operator.errors import BudgetExceeded, DisclosureBlocked
@@ -19,13 +19,15 @@ class Out(BaseModel):
 
 
 def _app(settings, owner, responder=None, **kw):
+    from types import SimpleNamespace
+
     owner.add_restricted_stub("restricted-area", ["Project Sentinel X"])
-    llm = MockLLM(responder or (lambda p, s: {"text": "fine"}))
+    s = settings.model_copy(update=kw)
+    clients, calls = mock_clients(responder or (lambda p, s: {"text": "fine"}), s.stage_models)
     search = MockSearch()
     fetcher = FakeFetcher({PAGE_URL: ("text/html", PAGE_HTML)})
-    from dataclasses import replace  # noqa: F401
-    app = build_app(settings.model_copy(update=kw), llm=llm, search=search, fetcher=fetcher, price_in_per_mtok=1.0, price_out_per_mtok=5.0)
-    return app, llm, search, fetcher
+    app = build_app(s, llms=clients, search=search, fetcher=fetcher)
+    return app, SimpleNamespace(calls=calls), search, fetcher
 
 
 def test_llm_rejects_raw_strings(settings, owner):
@@ -36,7 +38,7 @@ def test_llm_rejects_raw_strings(settings, owner):
 
 
 def test_deny_term_in_search_query_is_blocked_before_leaving_and_incident_has_only_a_hash(settings, owner):
-    app, _, search, _ = _app(settings, owner)
+    app, _, search, _ = _app(settings, owner, search_enabled=True)
     with pytest.raises(DisclosureBlocked) as e:
         app.search.search(SearchQuery("grants for Project Sentinel X style platforms"))
     assert e.value.halt is True and search.queries == []  # never reached the provider
@@ -56,25 +58,26 @@ def test_deny_term_in_url_skips_fetch_without_halting(settings, owner):
 def test_deny_term_in_trusted_prompt_text_is_blocked(settings, owner):
     app, llm, *_ = _app(settings, owner)
     with pytest.raises(DisclosureBlocked):
-        app.builder.make_prompt(P.FIT_ASSESSMENT, D.CLOUD_LLM, "Compare with Project Sentinel X", schema_name="Out")
+        app.builder.make_prompt(P.FIT_ASSESSMENT, D.CLOUD_LLM, "Compare with Project Sentinel X", schema_name="Out", stage="extract")
     assert llm.calls == []
     app.close()
 
 
 def test_page_that_mentions_a_deny_term_is_data_not_a_leak(settings, owner):
     app, llm, *_ = _app(settings, owner)
-    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["a page about project sentinel x"], schema_name="Out")
+    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["a page about project sentinel x"], schema_name="Out", stage="extract")
     assert app.llm.structured(p, Out).parsed.text == "fine"  # input mention is not our disclosure
     app.close()
 
 
 def test_model_emitting_a_deny_term_that_was_not_in_its_input_is_halted(settings, owner):
     app, llm, *_ = _app(settings, owner, responder=lambda p, s: {"text": "as seen in project sentinel x docs"})
-    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["innocent page"], schema_name="Out")
+    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["innocent page"], schema_name="Out", stage="extract")
     with pytest.raises(DisclosureBlocked) as e:
         app.llm.structured(p, Out)
     assert e.value.halt
-    assert app.repo.conn.execute("SELECT count(*) FROM llm_call_log").fetchone()[0] == 0  # blocked output is not logged
+    row = app.repo.conn.execute("SELECT response_text, cost_usd, stage FROM llm_call_log").fetchone()
+    assert row["response_text"] is None and row["cost_usd"] > 0 and row["stage"] == "extract"  # cost recorded, blocked text is not
     app.close()
 
 
@@ -86,8 +89,8 @@ def test_post_body_is_scanned(settings, owner):
 
 
 def test_budget_caps_stop_the_run(settings, owner):
-    app, llm, search, fetcher = _app(settings, owner, max_llm_calls=1, max_searches=1, max_fetches=1)
-    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["x"], schema_name="Out")
+    app, llm, search, fetcher = _app(settings, owner, max_llm_calls=1, max_searches=1, max_fetches=1, search_enabled=True)
+    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["x"], schema_name="Out", stage="extract")
     app.llm.structured(p, Out)
     with pytest.raises(BudgetExceeded):
         app.llm.structured(p, Out)
@@ -102,11 +105,10 @@ def test_budget_caps_stop_the_run(settings, owner):
 
 def test_every_call_is_logged_for_audit(settings, owner):
     app, *_ = _app(settings, owner)
-    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["x"], schema_name="Out")
+    p = app.builder.make_prompt(P.EXTRACTION, D.CLOUD_LLM, "extract", untrusted=["x"], schema_name="Out", stage="extract")
     app.llm.structured(p, Out)
     app.fetcher.get(PAGE_URL)
-    app.search.search(SearchQuery("small business AI grants"))
     c = app.repo.conn
     assert c.execute("SELECT count(*) FROM llm_call_log").fetchone()[0] == 1
-    assert {r["kind"] for r in c.execute("SELECT kind FROM egress_log")} == {"fetch", "search"}
+    assert {r["kind"] for r in c.execute("SELECT kind FROM egress_log")} == {"fetch"}
     app.close()

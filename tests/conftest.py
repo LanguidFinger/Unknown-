@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from opportunity_operator.adapters.fake_fetcher import FakeFetcher
-from opportunity_operator.adapters.mock_llm import MockLLM
-from opportunity_operator.adapters.mock_search import MockSearch
+from opportunity_operator.adapters.mock_llm import mock_clients
 from opportunity_operator.app import App, build_app, init_data_dir
 from opportunity_operator.config import Settings
 from opportunity_operator.owner import OwnerSession
@@ -62,13 +62,13 @@ def default_responder(prompt, schema):
 def make_app(settings: Settings):
     apps: list[App] = []
 
-    def _make(responder=default_responder, pages=None) -> tuple[App, MockLLM, FakeFetcher]:
-        llm = MockLLM(responder)
+    def _make(responder=default_responder, pages=None, **overrides) -> tuple[App, SimpleNamespace, FakeFetcher]:
+        s = settings.model_copy(update=overrides) if overrides else settings
+        clients, calls = mock_clients(responder, s.stage_models)
         fetcher = FakeFetcher(pages if pages is not None else {PAGE_URL: ("text/html", PAGE_HTML)})
-        a = build_app(settings, llm=llm, search=MockSearch(), fetcher=fetcher,
-                      price_in_per_mtok=1.0, price_out_per_mtok=5.0)
+        a = build_app(s, llms=clients, fetcher=fetcher)
         apps.append(a)
-        return a, llm, fetcher
+        return a, SimpleNamespace(calls=calls), fetcher
 
     yield _make
     for a in apps:

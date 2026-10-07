@@ -41,3 +41,11 @@ class NotAuthorized(OperatorError):
 
 class UnsupportedContent(OperatorError):
     """Snapshot content type that Phase 0 cannot turn into verifiable text (e.g. PDF)."""
+
+
+class FeatureDisabled(OperatorError):
+    """A capability that is deliberately switched off (e.g. general web search)."""
+
+
+class ModelPolicyViolation(OperatorError):
+    """A call was routed to, or served by, a model other than the one configured for its stage."""

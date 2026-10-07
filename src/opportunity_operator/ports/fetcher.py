@@ -14,6 +14,8 @@ class FetchResult:
     body: bytes
     retrieved_at: str
     sha256: str
+    redirects: tuple[str, ...] = ()                  # every URL we were redirected away from, in order
+    headers: tuple[tuple[str, str], ...] = ()        # diagnostic subset: rate-limit, retry-after, auth challenge, server
 
 
 class Fetcher(Protocol):

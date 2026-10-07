@@ -24,9 +24,10 @@ MODELS: dict[str, tuple[float, float, float, int]] = {
 }
 BATCH_FACTOR = 0.5  # Message Batches: 50% off input and output (official)
 
-# Web search (UNVERIFIED secondary figure for Brave Search API; vendor page was blocked from the build sandbox).
-SEARCH_USD_PER_1K = 5.0
-SEARCH_QUERIES_PER_100_CANDIDATES = 30
+# General web search is DISABLED (owner decision): discovery uses free government APIs/pages and curated official pages.
+# If a vendor is added later, set the price and query count here (any figure for a vendor is unverified).
+SEARCH_USD_PER_1K = 0.0
+SEARCH_QUERIES_PER_100_CANDIDATES = 0
 
 # Funnel assumptions per 100 discovered candidates.
 PREFILTER_KEEP = 0.60   # deterministic rules (status, domain, dedupe, hard knockouts) drop 40% before any model sees them
@@ -81,7 +82,9 @@ SCENARIOS = [
 
 
 def evaluate(s: Scenario) -> dict[str, float]:
-    discovery = SEARCH_QUERIES_PER_100_CANDIDATES * SEARCH_USD_PER_1K / 1000 + cost("haiku-4.5", QUERY_EXPANSION, batch=True)
+    discovery = SEARCH_QUERIES_PER_100_CANDIDATES * SEARCH_USD_PER_1K / 1000
+    if SEARCH_QUERIES_PER_100_CANDIDATES:
+        discovery += cost("haiku-4.5", QUERY_EXPANSION, batch=True)
     triaged = 100 * PREFILTER_KEEP
     triage = cost(*s.triage[:1], TRIAGE, batch=s.triage[1], n=int(triaged))
     verified = triaged * TRIAGE_KEEP

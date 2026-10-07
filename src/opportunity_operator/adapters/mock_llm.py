@@ -34,3 +34,11 @@ class MockLLM:
         parsed = out if isinstance(out, schema) else schema.model_validate(out)
         raw = parsed.model_dump_json()
         return LLMResult(parsed, Usage(estimate_tokens(rendered), estimate_tokens(raw)), self.model_id, raw)
+
+
+def mock_clients(
+    responder: Callable[[Prompt, type[BaseModel]], BaseModel | dict[str, Any]], stage_models: dict[str, str]
+) -> tuple[dict[str, MockLLM], list[RecordedCall]]:
+    """One mock client per stage, each reporting the model its stage is configured for; shared call log."""
+    shared: list[RecordedCall] = []
+    return {stage: MockLLM(responder, model_id=model, calls=shared) for stage, model in stage_models.items()}, shared

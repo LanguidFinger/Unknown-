@@ -35,12 +35,12 @@ def run(app: App, oid: str, url: str, *, fit_destination: Destination = Destinat
 
     ext_prompt = app.builder.make_prompt(Purpose.EXTRACTION, Destination.CLOUD_LLM,
                                          "Extract deadline and award facts with verbatim quotes.",
-                                         untrusted=[page_text], schema_name="ExtractionOut")
+                                         untrusted=[page_text], schema_name="ExtractionOut", stage="extract")
     extracted = app.llm.structured(ext_prompt, ExtractionOut).parsed
     ids, unverified = [], 0
     for item in extracted.items:
         rec = app.repo.add_evidence(oid, sid, item.field, item.value, item.quote, confidence=item.confidence,
-                                    extracted_by=f"{app.llm._inner.model_id}/extract.v0")  # noqa: SLF001
+                                    extracted_by=f"{app.settings.stage_models['extract']}/extract.v0")
         if rec.verified:
             ids.append(rec.id)
         else:
@@ -49,7 +49,7 @@ def run(app: App, oid: str, url: str, *, fit_destination: Destination = Destinat
     fit_prompt = app.builder.make_prompt(Purpose.FIT_ASSESSMENT, fit_destination,
                                          "Rate fit 1-10 for the listed project given verified evidence.",
                                          untrusted=[e["quote"] for e in app.repo.verified_evidence(oid)],
-                                         schema_name="FitOut")
+                                         schema_name="FitOut", stage="judge")
     fit = app.llm.structured(fit_prompt, FitOut).parsed
     aid = app.repo.add_assessment(oid, gate_results={"stub": "pass"}, evidence_ids=ids, fit=max(1, min(10, fit.fit)),
                                   rationale=fit.rationale, recommendation="INVESTIGATE", model_id="mock", prompt_version="v0")

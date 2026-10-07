@@ -92,6 +92,7 @@ class ContextBuilder:
         untrusted: Sequence[str] = (),
         schema_name: str,
         prompt_version: str = "v0",
+        stage: str | None = None,
     ) -> Prompt:
         prompt = _mint_prompt(
             purpose=purpose,
@@ -101,6 +102,7 @@ class ContextBuilder:
             untrusted=list(untrusted),
             schema_name=schema_name,
             prompt_version=prompt_version,
+            stage=stage or purpose.value.lower(),
         )
         # Trusted portion only: web-derived text containing a deny-term is not *our* disclosure.
         self._filter.check(prompt.trusted_text(), channel="prompt_mint")
