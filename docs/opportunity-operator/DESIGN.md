@@ -413,6 +413,8 @@ Access is **per fact**, with a per-project default ceiling. **Defaults are conse
 
 ### 7.3 Restricted-project isolation — how it is technically enforced
 
+**Primary control: architectural absence of access (items 1–4). The deny-list tripwire (item 5) and canary test (item 6) are defense in depth only.**
+
 1. **There is no ingestion path.** The system has no repository reader, no "import project folder", no file-watching of source trees. Project data enters only through `operator profile set …` or reviewed YAML the owner writes by hand.
 2. **RESTRICTED content is never stored.** The `restricted_stub` table holds only a label and **deny-terms** (e.g. a project codename) — no description, no specs.
 3. **The agent process cannot read other projects.** Its only filesystem root is the data directory. Restricted-project repositories are not mounted/readable by that process. (In Phase 3, run the agent in a container or separate OS user to make this a hard boundary.)
@@ -670,3 +672,22 @@ Ordered by importance. None of these reject the goal; each changes how it is bui
 4. **Provider and budget.** Which LLM API key and which web-search API will be used, and what per-run and monthly spend cap? (Keys are provided by you at runtime; they are never committed.)
 5. **Where it runs.** Local machine is the recommended default (keeps profile data off cloud sandboxes and repos). This cloud session is ephemeral and is suitable for building and testing only, not for storing your real profile.
 6. **Repository.** This repo is currently empty. Code goes here; real data stays outside it. Is this repo private?
+
+---
+
+## 19. Phase 0 implementation notes and deviations from this document
+
+Written after Phase 0 was built and tested. Where this section disagrees with sections 1-18, this section is current. See `PHASE0_REPORT.md` for evidence.
+
+1. **Package/CLI name.** The package is `opportunity_operator` and the CLI is `opop`. §11 named the package `operator`, which would shadow Python's standard-library `operator` module.
+2. **Isolation order (owner-directed).** Architectural absence is the primary control; the deny-list tripwire and canary tests are defense in depth. Implemented as: no import/ingest/index command or setting exists; all file access is confined to `DataDir`; the data dir cannot sit in a git worktree; AST tests pin the absence of filesystem/process/retrieval capability; an audit-hook test observes a full hostile run.
+3. **Extra lifecycle transitions.** Added agent `OWNER_REVIEW|WATCHLIST|READY_FOR_REVIEW -> DISQUALIFIED` (facts can change at any stage) and owner `APPROVED|PREPARING -> WITHDRAWN`. `QUALIFIED` stays merged into `OWNER_REVIEW`; `DECLINED` and `NOT_AWARDED` stay split.
+4. **Schema changes.** `source_snapshot` stores `raw_sha256`/`text_sha256`/`raw_path`/`text_path`; `evidence` stores `quote_start`/`quote_end` and is fully append-only (supersession lives in `evidence_supersession`). Added `assessment_evidence`, `llm_call_log`, `egress_log`, `audit_incident`, `discovery_hit`, `schema_migration`, and the new-entity setup queue (`prerequisite`, `opportunity_prerequisite`).
+5. **Prerequisite queue (owner-directed).** Discovery never waits on setup. The new entity starts as "not yet established" (no EIN/UEI/SAM/certifications; the old business is not reused). `PrerequisiteService` reports transitive blockers per opportunity and which opportunities each prerequisite unlocks. Only the owner can mark a prerequisite done (trigger-enforced). Catalogue entries are seeded with `details_verified = 0`: requirements/paths must be verified from primary sources in Phase 1.
+6. **Database roles.** Five roles (`agent`, `system`, `owner`, `context`, `migrator`) enforced by a SQLite authorizer (no DDL/ATTACH/extensions/unsafe PRAGMAs; agent cannot read or write profile tables; `context` is read-only) plus triggers keyed to an application-defined `current_actor()`. A raw connection without that function fails closed on every guarded table. Startup verification (`verify_guards`) rebuilds the reference schema in memory and compares trigger definitions and the frozen lifecycle table; the app refuses to start on any difference.
+7. **Profile-data rules, stricter than §7.2.** Facts must be `verified_by_owner`; `sensitivity='high'` facts never enter any prompt (local or cloud) and are available only to deterministic local code via `LocalValues`; extraction and skeptic purposes are profile-blind; project internal names never appear (only an owner-set alias).
+8. **Disclosure-filter semantics.** Deny-terms are checked against our own text (prompt instructions, facts, queries, API bodies, URLs) and against model output, ignoring terms that were present in the untrusted input (a web page mentioning a term is data, not our leak). A URL hit skips that fetch (`halt=False`); every other hit halts the run. Incidents store only a hash.
+9. **Network.** POST is allowed, but only for JSON queries to explicitly allow-listed API hosts (Grants.gov search is a POST), never following redirects. Code-hosting and private-document hosts are blocked by default; IP literals, internal names, non-public DNS answers, credentials/cookies, non-443 ports, oversize bodies and non-document content types are refused. `egress_mode='proxy'` exists for managed sandboxes whose proxy does address filtering.
+10. **File API naming.** `DataDir` methods are `get_text/put_text/get_bytes/put_bytes/ensure_dir`, deliberately distinct from `pathlib` names so the AST scan can flag any other file access precisely.
+11. **PDF snapshots are refused in Phase 0** (`UnsupportedContent`) rather than silently stored unverifiable; bytes-in/text-out PDF extraction is Phase 1.
+12. **Not built in Phase 0, by plan:** discovery adapters, extraction prompts, gates, scoring, skeptic, dedupe/registry logic, dossier generation, dashboard, recheck. Provider interfaces exist with mock implementations only; no live adapter and no credentials.
