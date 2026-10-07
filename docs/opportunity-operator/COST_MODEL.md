@@ -11,18 +11,17 @@ Nothing paid is enabled. This is the pre-decision summary requested before choos
 | Triage + first-pass extraction (bulk) | **Haiku 4.5**, Message Batches | $1 / $5 per MTok, 50% off in batch ($0.50 / $2.50). No always-on thinking, so cost is predictable. Supports structured outputs. |
 | IP / data-rights / fees clause pass | **Sonnet 5.5**, batch, effort `low` | $2 / $10 ($1 / $5 batch). This is the pass where an extraction miss is costly, so it gets the stronger model, but only over keyword-hit windows. |
 | Fit assessment + skeptic, and dossier drafting | **Opus 5.5**, effort set explicitly | $4 / $20. Used only on candidates that passed deterministic gates, and for approved items. Its default effort is `medium` and thinking cannot be disabled, so set effort `low` for routine judgment and raise it only where measurement shows a gain. |
-| Not recommended | **Fable 5.1** | $10 / $50 (2.5x Opus 5.5). The comparison row shows about 5.6x the all-in cost of the lean setup, with no evidence yet that this task needs it. |
+| Not recommended | **Fable 5.1** | $10 / $50 (2.5x Opus 5.5). The comparison row shows about 5.9x the all-in cost of the lean setup, with no evidence yet that this task needs it. |
 
 Model identifiers stay configuration, not code, so any of these can be swapped. A cheaper non-Anthropic model could undercut Haiku for triage (OpenAI GPT-5.4-nano and Gemini Flash-Lite tiers are reported at roughly $0.20-0.30 in / $1.25-2.50 out, **unverified**); the `LLMClient` port makes that a measured experiment in Phase 1, not a rewrite. Structured-output support for those vendors is also unverified here.
 
-## 2. Recommended search / retrieval
+## 2. Web search: deferred (owner decision)
 
-- **Federal funding core needs no search vendor.** Grants.gov and SBIR.gov expose public APIs that return structured fields (not yet verified: see `SOURCE_FEASIBILITY.md`). Their cost is $0 in model tokens.
-- **Web search is supplementary** (state/local programs, credits, corporate programs): about 30 queries per 100 candidates, so roughly $0.15 per 100 discovered at the reported $5 per 1,000 queries.
-- **Provisional pick: Brave Search API** (reported $5 per 1,000 queries, with a monthly credit; key required; all unverified). Chosen over Tavily and Exa because those return page content the pipeline does not need (it fetches primary sources itself) and cost more per query. Serper is reported cheapest per query but returns scraped Google snippets; terms on storing/caching results and on AI use were **not retrievable** for any vendor, so read each vendor's terms before storing results.
-- Anthropic's server-side web search is $10 per 1,000 searches plus tokens for the results (official), so it is the most expensive option and is not recommended for bulk discovery.
-- Google Custom Search is reported closed to new customers and discontinued 2027-01-01 (unverified): do not build on it. Bing Search API was reported retired 2025-08-11 (consistent across several sources, page not fetched).
-- No search vendor needs to be chosen to start Phase 1; the first live run can use the structured APIs plus the curated credit list.
+No general search vendor is enabled and none will be added yet (not Tavily, SerpAPI, Brave, Bing, Google or any other). The initial MVP discovers through authoritative sources only: Grants.gov, SBIR/STTR official sources, other authoritative government APIs and pages, and the curated official AI/cloud credit program pages. Once that pipeline works, search vendors will be compared on the *actual gaps* it leaves.
+
+What is built: the `SearchProvider` port and a `GuardedSearch` wrapper, **disabled**. It refuses every query unless `search_enabled` is switched on in settings AND a provider is wired at the composition root; no vendor adapter, vendor host or vendor name exists anywhere in the code (a test scans for this). Enabling later is a deliberate, reviewable change.
+
+Vendor pricing gathered earlier (all unverified, vendor pages were blocked from the sandbox) is kept in the research notes only and is not a recommendation.
 
 ## 3. Expected cost (assumption-based)
 
@@ -30,13 +29,15 @@ Funnel per 100 discovered candidates: deterministic prefilter keeps 60, cheap-mo
 
 | Scenario | Discover + triage, per 100 discovered | Per opportunity fully verified | Per completed dossier | All-in, per 100 discovered |
 |---|---|---|---|---|
-| **LEAN (recommended start)** | $0.20 | $0.122 | $0.40 | **$3.18** |
-| BALANCED (Sonnet extraction, Opus dossiers) | $0.20 | $0.158 | $0.71 | $4.46 |
-| PREMIUM (Opus everywhere except triage) | $0.20 | $0.265 | $0.71 | $6.39 |
-| LEAN without deterministic windowing of terms | $0.20 | $0.133 | $0.40 | $3.39 |
-| All Fable 5.1 (comparison only) | $0.20 | $0.762 | $1.98 | $17.88 |
+| **LEAN (recommended start)** | $0.04 | $0.122 | $0.40 | **$3.03** |
+| BALANCED (Sonnet extraction, Opus dossiers) | $0.04 | $0.158 | $0.71 | $4.31 |
+| PREMIUM (Opus everywhere except triage) | $0.04 | $0.265 | $0.71 | $6.24 |
+| LEAN without deterministic windowing of terms | $0.04 | $0.133 | $0.40 | $3.24 |
+| All Fable 5.1 (comparison only) | $0.04 | $0.762 | $1.98 | $17.73 |
 
-Answers to the four numbers asked for, for the recommended LEAN setup: **about $0.20 per 100 discovered** (discovery plus triage), **about $0.12 per opportunity fully verified**, **about $0.40 per completed dossier**, and **about $3 all-in per 100 discovered**. At a cap of $5 per run (the current default setting) a run has headroom of roughly 1.5x.
+Search is disabled, so discovery costs no search or query-expansion tokens; the discovery figure is triage only. (Adding a search vendor later would add a per-query cost; any vendor price is unverified today.)
+
+Answers to the four numbers asked for, for the recommended LEAN setup: **about $0.04 per 100 discovered** (triage only; discovery uses free government sources), **about $0.12 per opportunity fully verified**, **about $0.40 per completed dossier**, and **about $3 all-in per 100 discovered**. At a cap of $5 per run a run has headroom of roughly 1.6x.
 
 What drives the cost: in LEAN, the Opus judgment pass is about two-thirds of the per-verified cost because of the assumed 2,000 thinking tokens per call at `medium` effort. Levers, in order: run the judgment pass only on candidates that pass deterministic gates (about 12 of the 18, not all 18); use `low` effort for fit assessment; use Sonnet 5.5 for the skeptic until measurement shows Opus is needed; cache the shared system prompt and clause checklist (cache reads are $0.20 per MTok for Opus/Sonnet 5.5). The model also ignores prompt caching (conservative) and uses the 1.3x token multiplier the pricing page gives for the newer tokenizer.
 
@@ -55,9 +56,18 @@ What drives the cost: in LEAN, the Opus judgment pass is about two-thirds of the
 
 A model is still needed for: interpreting unstructured eligibility and IP/terms text, fit assessment, the skeptic judgment, and dossier drafting.
 
-## 5. Decision needed before any live run
+## 5. Approved budget policy (owner decision, 2026-10-07) and how it is enforced
 
-1. Confirm the lean setup (Haiku / Sonnet / Opus split above) or ask for a different mix.
-2. Pick a search provider or defer web search.
-3. Set an operating budget: a per-run cap (default $5) and a monthly cap. The first measured run will replace these estimates, and the first live run should use a deliberately small cap.
-4. Provide keys at runtime through the environment. They are never stored in the repository or the data directory.
+| Rule | Enforcement |
+|---|---|
+| **Hard cap $5 per run** | `BudgetGuard` checks a conservative worst-case estimate (about 3 characters per token for input, plus the maximum output) against the run's remaining cap *before* a call may start. Exceeding it raises `BudgetExceeded` ("owner approval required to continue"); the run stops. |
+| **Hard cap $50 per UTC month** (a ceiling, not a target) | The same pre-flight check against the month's total, summed from the append-only call log across all runs. Previous months do not count. |
+| **Only the owner can raise a cap, and only for one run or one month** | Owner-recorded, append-only `budget_approval` rows (`opop budget-approve`, interactive confirmation). The agent cannot insert them: database authorizer and trigger both refuse. |
+| **Usage and cost by pipeline stage** | Every model call is logged with its stage, model, tokens and cost, including calls whose output was then blocked. `opop usage` reports calls, tokens, cost and average cost per call by stage and model, and the share of the monthly cap used. The run total is written to `run_log`. Phase 1 adds outcomes per stage (candidates passed, elevated, approved) so each stage can be judged on whether it earns its cost. |
+| **No silent fallback to a more expensive model** | Each stage has exactly one configured model and client. A missing stage, a client that is not the stage's configured model, or an unpriced model is refused. Provider errors propagate and are never retried on another model. If a response is served by a different model than configured (for example a provider-side fallback), the call is logged at the model's real price and then refused. Phase 1 adapters must not enable any provider-side fallback or refusal-rescue feature. |
+
+At the lean setup's estimated all-in cost (about $3 per 100 discovered candidates) the monthly ceiling corresponds to roughly 1,650 discovered candidates per month, and the first live runs should use a deliberately small per-run cap well under $5 so the first measured numbers arrive cheaply.
+
+Model split (configured in `Settings.stage_models`; prices in `Settings.model_prices`, both overridable from the data directory's `settings.yaml`): query expansion, triage and extraction on Haiku 4.5; terms/IP clause pass and dossier drafting on Sonnet 5.5; judgment (fit and skeptic) and dossier summary on Opus 5.5. Fable 5.1 is not in the split.
+
+Keys are provided through the environment at runtime and are never stored in the repository or the data directory.
