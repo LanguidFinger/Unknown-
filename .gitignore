@@ -1,0 +1,27 @@
+# Real data NEVER lives in this repo. These patterns are defense-in-depth.
+data/
+.opportunity-operator/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+snapshots/
+dossiers/
+profiles/
+.env
+.env.*
+*.key
+*.pem
+secrets*
+settings.local.yaml
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/

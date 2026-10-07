@@ -1,0 +1,32 @@
+# Bundled TEMPLATE for the Phase 0/1 test project. It contains only what the owner stated;
+# every other field is the explicit string UNKNOWN. Nothing here is verified: the owner must
+# run `opop verify-fact ...` before any value can reach a model. No real identifiers belong here.
+project:
+  name: Opportunity Operator Platform
+  external_alias: Opportunity Operator Platform
+  default_level: APPLICATION_SAFE
+  facts:
+    description: >-
+      An AI/software product being developed to discover, verify, triage, track, and prepare legitimate
+      funding/resource opportunities for small businesses and creators while maintaining evidence
+      provenance, human approval, and IP/privacy safeguards.
+    intended_users: small businesses and creators
+    development_stage: UNKNOWN
+    technical_novelty: UNKNOWN
+    research_claims: UNKNOWN
+    commercialization_plan: UNKNOWN
+    revenue: UNKNOWN
+    customers: UNKNOWN
+    established_capabilities: UNKNOWN
+    existing_ip: UNKNOWN
+    patent_status: UNKNOWN
+    estimated_budget: UNKNOWN
+    funding_needs: UNKNOWN
+business:
+  # The new entity is treated as not yet established. These are status flags, not identifiers.
+  entity_status: not yet formed
+  ein_status: not yet obtained
+  uei_status: not yet obtained
+  sam_registration_status: not yet completed
+  vosb_certification_status: not yet completed
+  sdvosb_certification_status: not yet completed
